@@ -1,0 +1,3 @@
+../data/files/add_constant.py ../data/plagiat1/add_constant.py
+../data/files/arima.py ../data/plagiat1/arima.py
+../data/files/scale-images.py ../data/plagiat1/scale-images.py
