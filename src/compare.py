@@ -5,7 +5,7 @@ Example usage: python compare.py ../data/input.txt ../data/score.txt --model ../
 
 from argparse import ArgumentParser
 import pickle
-
+from train import Model
 
 parser = ArgumentParser()
 parser.add_argument('input')
