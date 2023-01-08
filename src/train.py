@@ -55,6 +55,9 @@ def get_node_source(source, node):
 
 
 def compare_similar_nodes(source1, source2, nodes1, nodes2):
+    """
+    Calculating edit distances between nodes
+    """
     result_dict = {}
     similarity_matrix = [
         [0 for _ in range(len(nodes2))] for _ in range(len(nodes1))
@@ -105,79 +108,54 @@ def get_node_types(tree):
     return nobody_types, body_types
 
 
-def get_types_distance(comparison_result, types=None):
+def get_types_distance(comparison_result):
     average_distance = 0
     n = 0
-    for key, values in comparison_result.items():
-        if types is not None and key in types:
-            for node in values:
-                average_distance += values[node][1]
-                n += 1
-        elif types is None:
-            for node in values:
-                average_distance += values[node][1]
-                n += 1
-        else:
-            continue
+    for value in comparison_result.values():
+        average_distance += value[1]
+        n += 1
     return average_distance / n if n != 0 else 0
 
 
-def compare_files_imports(source1, source2, initial_tree, suspect_tree):
-    initial_nobody_types, initial_body_types = get_node_types(initial_tree)
-    suspect_nobody_types, suspect_body_types = get_node_types(suspect_tree)
-    comparison_result = {}
-    for key, value in initial_nobody_types.items():
-        if (
-            suspect_nobody_types.get(key) is not None
-            and len(value) > 0
-            and len(suspect_nobody_types[key]) > 0
-        ):
-            comparison_result[key] = compare_similar_nodes(
-                source1, source2, value, suspect_nobody_types[key]
-            )
-    return get_types_distance(comparison_result, [ast.Import, ast.ImportFrom])
-
-
-def get_class_defs(tree, class_defs):
+def parse_tree(tree, imports, class_defs, function_defs):
     for node in tree.body:
-        if isinstance(node, ast.ClassDef):
+        if type(node) == ast.Import:
+            imports.append(node)
+        if type(node) == ast.ImportFrom:
+            imports.append(node)
+        if type(node) == ast.ClassDef:
             class_defs.append(node)
-        if hasattr(node, "body"):
-            get_class_defs(node, class_defs)
-
-
-def get_function_defs(tree, function_defs):
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef):
+        if type(node) == ast.FunctionDef:
             function_defs.append(node)
         if hasattr(node, "body"):
-            get_function_defs(node, function_defs)
+            parse_tree(node, imports, class_defs, function_defs)
 
 
-def compare_files_classes(source1, source2, initial_tree, suspect_tree):
-    initial_tree_classes = []
-    suspect_tree_classes = []
-    get_class_defs(initial_tree, initial_tree_classes)
-    get_class_defs(suspect_tree, suspect_tree_classes)
-    comparison_result = {
-        0: compare_similar_nodes(
-            source1, source2, initial_tree_classes, suspect_tree_classes
-        )
-    }
+def compare_files(source1, source2, initial_nodes, suspect_nodes):
+    comparison_result = compare_similar_nodes(
+        source1, source2, initial_nodes, suspect_nodes
+    )
     return get_types_distance(comparison_result)
 
 
-def compare_files_functions(source1, source2, initial_tree, suspect_tree):
-    initial_tree_functions = []
-    suspect_tree_functions = []
-    get_function_defs(initial_tree, initial_tree_functions)
-    get_function_defs(suspect_tree, suspect_tree_functions)
-    comparison_result = {
-        0: compare_similar_nodes(
-            source1, source2, initial_tree_functions, suspect_tree_functions
-        )
-    }
-    return get_types_distance(comparison_result)
+def compare_all(source1, source2, tree1, tree2):
+    """
+    Comparing nodes with similar types and calculating average edit distances
+    """
+    imports1 = []
+    class_defs1 = []
+    function_defs1 = []
+    parse_tree(tree1, imports1, class_defs1, function_defs1)
+    imports2 = []
+    class_defs2 = []
+    function_defs2 = []
+    parse_tree(tree2, imports2, class_defs2, function_defs2)
+    imports_distance = compare_files(source1, source2, imports1, imports2)
+    classes_distance = compare_files(
+        source1, source2, class_defs1, class_defs2
+    )
+    # functions_distance = compare_files(source1, source2, function_defs1, function_defs2)
+    return imports_distance, classes_distance, 0
 
 
 def edit_distance(s1, s2):
@@ -323,6 +301,7 @@ class Dataset(torch.utils.data.Dataset):
         2. Levenshtein distance in imports
         3. Levenshtein distance in Class names
         4. Levenshtein distance in function names
+        (works too slow, had to exclude)
         Mark is 1 if files are plagiarized, 0 otherwise
 
         :param index:
@@ -336,11 +315,14 @@ class Dataset(torch.utils.data.Dataset):
             tree2 = ast.parse(text2)
         except Exception:
             return torch.FloatTensor([0, 0, 0, 0, 0]).to("cuda")
+        imports_distance, classes_distance, functions_distance = compare_all(
+            text1, text2, tree1, tree2
+        )
         features = [
             self.length_comparison(text1, text2),
-            compare_files_imports(text1, text2, tree1, tree2),
-            compare_files_classes(text1, text2, tree1, tree2),
-            compare_files_functions(text1, text2, tree1, tree2),
+            imports_distance,
+            classes_distance,
+            functions_distance,
             mark,
         ]
         features = torch.FloatTensor(features).to("cuda")
@@ -350,13 +332,15 @@ class Dataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     args = parser.parse_args()
     dataset = Dataset(args.files, args.plagiat1, args.plagiat2)
-    # 1 plagiarized pair on average in batch of 32
+    # 1 plagiarized pair on average in batch of 128
     batch_size = 128
     dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, shuffle=True
     )
     network = torch.nn.Sequential(
-        torch.nn.Linear(4, 5),
+        torch.nn.Linear(4, 10),
+        torch.nn.ReLU(),
+        torch.nn.Linear(10, 5),
         torch.nn.ReLU(),
         torch.nn.Linear(5, 1),
         torch.nn.Sigmoid(),
@@ -368,5 +352,5 @@ if __name__ == "__main__":
         lr=0.001,
     )
     # model trains on cuda by default
-    model.fit(dataloader, epochs=3)
     torch.save(model, args.model)
+    model.fit(dataloader, epochs=3)

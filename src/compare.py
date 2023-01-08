@@ -1,10 +1,10 @@
 """
 Compare file pairs for plagiarism and save scores to file
-Example usage: python compare.py ../data/input.txt ../data/score.txt --model ../models/model.pkl
+Example usage: python compare.py ../data/input.txt ../data/score.txt --model ../models/model.pt
 """
 
 from argparse import ArgumentParser
-from train import Model, compare_files_imports, compare_files_classes, Dataset
+from train import Model, Dataset, compare_all
 import torch
 import ast
 
@@ -21,16 +21,13 @@ def compare_files(initial_file, suspect_file):
         suspect_text = f.read()
     tree1 = ast.parse(initial_text)
     tree2 = ast.parse(suspect_text)
-    imports_distance = compare_files_imports(
-        initial_text, suspect_text, tree1, tree2
-    )
-    classes_distance = compare_files_classes(
+    imports_distance, classes_distance, functions_distance = compare_all(
         initial_text, suspect_text, tree1, tree2
     )
     lengths = Dataset.length_comparison(initial_text, suspect_text)
-    data = torch.FloatTensor([lengths, imports_distance, classes_distance]).to(
-        "cuda"
-    )
+    data = torch.FloatTensor(
+        [lengths, imports_distance, classes_distance, functions_distance]
+    ).to("cuda")
     return model.network(data).item()
 
 
