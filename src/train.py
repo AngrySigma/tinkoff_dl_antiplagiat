@@ -44,20 +44,33 @@ def get_dataset():
 
 
 class Model:
-    def __init__(self, network, optimizer, loss=torch.nn.MSELoss, lr=0.001):
+    def __init__(self, network, optimizer, loss_fn, dataset, lr=0.001):
         self.network = network
+        self.network.to('cuda')
         self.optimizer = optimizer(self.network.parameters(), lr=lr)
-        self.loss = loss()
+        self.loss_fn = loss_fn(reduction="mean")
 
     def fit(self, dataloader, epochs):
         for epoch in range(epochs):
-            for sample in dataloader:
-                out = self.network(sample[0])[0]
-                loss = self.loss(out, sample[1])
-                print(f"Epoch: {epoch}, Loss: {loss}")
+            print(f"Epoch {epoch + 1} of {epochs}")
+            average_loss = torch.tensor([0]).float().to('cuda')
+            for count, batch in enumerate(dataloader):
+                loss = torch.tensor([0]).float().to('cuda')
+                for sample in batch:
+                    features = sample[0].unsqueeze(0)
+                    target = sample[1].unsqueeze(0)
+                    out = self.network(features)
+                    loss += self.loss_fn(out, target.float())
+                loss /= dataloader.batch_size
+                average_loss += loss
+                if count % int(len(dataloader) / 10) == 0:
+                    print(f'{int(count / len(dataloader) * 100)}%')
                 loss.backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+            average_loss /= len(dataloader)
+            print(f"Epoch: {epoch}, Average loss: {average_loss.item()}")
+
         return self
 
 
@@ -82,7 +95,7 @@ class Dataset(torch.utils.data.Dataset):
         :param index: index of dataset item
         :return: dataset item
         """
-        # checks if item belongs to plagiat
+        # plagiarized file pairs
         len_files = len(self.files)
         valid_pairs = int(len_files * (len_files - 1) / 2)
         if index >= valid_pairs:
@@ -95,13 +108,13 @@ class Dataset(torch.utils.data.Dataset):
             file1 = os.path.join(self.dir_path, self.files[index])
             mark = 1
         else:
-            # if item belongs to pair, get pair
+            # normal file pairs
             num1 = math.floor((1 + math.sqrt(1 + 8 * index)) / 2)
             num2 = int(index - num1 * (num1 - 1) / 2)
             file1 = os.path.join(self.dir_path, self.files[num1])
             file2 = os.path.join(self.dir_path, self.files[num2])
             mark = 0
-        return file1, file2, torch.FloatTensor([mark])[0]
+        return file1, file2, mark
 
     @staticmethod
     def length_comparison(file1, file2):
@@ -123,22 +136,25 @@ class Dataset(torch.utils.data.Dataset):
         file1, file2, mark = self.get_filenames_by_index(index)
         features = []
         features.append(self.length_comparison(file1, file2))
-        features = torch.FloatTensor(features)
-        return features, mark
+        features.append(mark)
+        features = torch.FloatTensor(features).to('cuda')
+        return features
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
     dataset = Dataset(args.files, args.plagiat1, args.plagiat2)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
-    # print(dataset[0])
+    # to get 1 plagiarized pair in batch on average use batch of 32
+    batch_size = 128
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
     network = torch.nn.Sequential(
         torch.nn.Linear(1, 5),
         torch.nn.ReLU(),
         torch.nn.Linear(5, 1),
         torch.nn.Sigmoid(),
     )
-    model = Model(network, optimizer=torch.optim.Adam, loss=torch.nn.BCELoss, lr=0.0001)
-    # print(model.network.forward(dataset[0][0]))
-    # save_model(model)
+    model = Model(network=network, dataset=dataset, optimizer=torch.optim.Adam,
+                  loss_fn=torch.nn.BCELoss, lr=0.001)
+    # model trains on cuda by default
     model.fit(dataloader, epochs=10)
+    save_model(model)

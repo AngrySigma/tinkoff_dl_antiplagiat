@@ -6,6 +6,7 @@ Example usage: python compare.py ../data/input.txt ../data/score.txt --model ../
 from argparse import ArgumentParser
 import pickle
 from train import Model
+import torch
 
 parser = ArgumentParser()
 parser.add_argument('input')
@@ -23,7 +24,7 @@ def compare_files(initial_file, suspect_file):
         initial_text = f.read()
     with open(suspect_file, 'r', encoding='utf-8') as f:
         suspect_text = f.read()
-    return 1
+    return load_model(args.model).network(torch.tensor([1]).to('cuda').float()).item()
 
 
 def save_scores(scores, file):
