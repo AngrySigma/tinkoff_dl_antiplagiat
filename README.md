@@ -19,7 +19,6 @@ tinkoff_dl_antiplagiat</br>
 ### Запуск</br>
 Установка зависимостей</br>
 ``` pip install -r requirements.txt```</br>
-Для обучения необходимо иметь cudatoolkit для pytorch</br>
 Обучение модели (cuda)</br>
 ```python train.py ../data/files ../data/plagiat1 ...data/plagiat2 --model ../models/model.pt```</br>
 Обучает модель на файлах из папки files и папок plagiat1, plagiat2 и сохраняет ее в папку models</br>
