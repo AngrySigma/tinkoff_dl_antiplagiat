@@ -352,5 +352,5 @@ if __name__ == "__main__":
         lr=0.001,
     )
     # model trains on cuda by default
+    model.fit(dataloader, epochs=10)
     torch.save(model, args.model)
-    model.fit(dataloader, epochs=3)
